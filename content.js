@@ -4,9 +4,10 @@
 
   let inspectorEnabled = false;
   let isLocked = false;
-  let highlightElement = null;
+  let hoverOverlay = null;
+  let lockedOverlays = [];
+  let selectedTargets = new Set();
   let toolbarElement = null;
-  let currentTarget = null;
   let currentText = '';
   let currentMarkdown = '';
 
@@ -153,12 +154,57 @@
     }
   }
 
-  function createOverlay() {
-    if (!highlightElement) {
-      highlightElement = document.createElement('div');
-      highlightElement.id = 'copygo-highlight-overlay';
-      highlightElement.classList.add('copygo-highlight-overlay');
-      document.body.appendChild(highlightElement);
+  function createHoverOverlay() {
+    if (!hoverOverlay) {
+      hoverOverlay = document.createElement('div');
+      hoverOverlay.id = 'copygo-hover-overlay';
+      hoverOverlay.classList.add('copygo-highlight-overlay');
+      document.body.appendChild(hoverOverlay);
+    }
+  }
+
+  function updateHoverHighlight(target) {
+    if (!hoverOverlay) createHoverOverlay();
+    const rect = target.getBoundingClientRect();
+    const st = window.pageYOffset || document.documentElement.scrollTop;
+    const sl = window.pageXOffset || document.documentElement.scrollLeft;
+    hoverOverlay.style.width = rect.width + 'px';
+    hoverOverlay.style.height = rect.height + 'px';
+    hoverOverlay.style.top = (rect.top + st) + 'px';
+    hoverOverlay.style.left = (rect.left + sl) + 'px';
+    hoverOverlay.style.display = 'block';
+    if (!isLocked) {
+        document.body.classList.add('copygo-is-selecting');
+    }
+  }
+
+  function hideHoverHighlight() {
+    if (hoverOverlay) hoverOverlay.style.display = 'none';
+  }
+
+  function updateLockedOverlays() {
+    lockedOverlays.forEach(el => el.remove());
+    lockedOverlays = [];
+
+    selectedTargets.forEach(target => {
+      const overlay = document.createElement('div');
+      overlay.className = 'copygo-highlight-overlay locked';
+      document.body.appendChild(overlay);
+      const rect = target.getBoundingClientRect();
+      const st = window.pageYOffset || document.documentElement.scrollTop;
+      const sl = window.pageXOffset || document.documentElement.scrollLeft;
+      overlay.style.width = rect.width + 'px';
+      overlay.style.height = rect.height + 'px';
+      overlay.style.top = (rect.top + st) + 'px';
+      overlay.style.left = (rect.left + sl) + 'px';
+      overlay.style.display = 'block';
+      lockedOverlays.push(overlay);
+    });
+
+    if (selectedTargets.size > 0) {
+      document.body.classList.remove('copygo-is-selecting');
+    } else if (inspectorEnabled) {
+      document.body.classList.add('copygo-is-selecting');
     }
   }
 
@@ -168,9 +214,9 @@
     toolbarElement.id = 'copygo-toolbar';
     toolbarElement.classList.add('copygo-toolbar');
     var html = '';
-    html += '<button id="cg-btn-add" title="收藏 Markdown">' + ICONS.add + ' 收藏</button>';
+    html += '<button id="cg-btn-add" title="收藏 Markdown (按住Shift多选)">' + ICONS.add + ' <span>收藏</span></button>';
     html += '<div class="separator"></div>';
-    html += '<button id="cg-btn-copy" title="复制 Markdown">' + ICONS.copy + ' 复制</button>';
+    html += '<button id="cg-btn-copy" title="复制 Markdown (按住Shift多选)">' + ICONS.copy + ' <span>复制</span></button>';
     html += '<div class="separator"></div>';
     html += '<div class="copygo-btn-group">';
     html += '  <button id="cg-btn-export" title="导出选项">' + ICONS.export + ' 导出</button>';
@@ -200,18 +246,13 @@
     });
   }
 
-  function updateHighlight(target, locked = false) {
-    if (!highlightElement) createOverlay();
-    const rect = target.getBoundingClientRect();
-    const st = window.pageYOffset || document.documentElement.scrollTop;
-    const sl = window.pageXOffset || document.documentElement.scrollLeft;
-    highlightElement.style.width = rect.width + 'px';
-    highlightElement.style.height = rect.height + 'px';
-    highlightElement.style.top = (rect.top + st) + 'px';
-    highlightElement.style.left = (rect.left + sl) + 'px';
-    highlightElement.style.display = 'block';
-    if (locked) { highlightElement.classList.add('locked'); document.body.classList.remove('copygo-is-selecting'); } 
-    else { highlightElement.classList.remove('locked'); document.body.classList.add('copygo-is-selecting'); }
+  function updateToolbarIndicators() {
+      if (!toolbarElement) return;
+      const count = selectedTargets.size;
+      const bText = document.querySelector('#cg-btn-copy span');
+      if (bText) bText.innerText = count > 1 ? `复制 (${count})` : '复制';
+      const aText = document.querySelector('#cg-btn-add span');
+      if (aText) aText.innerText = count > 1 ? `收藏 (${count})` : '收藏';
   }
 
   function showToolbar(target) {
@@ -239,36 +280,83 @@
   }
 
   function resetState() {
-    isLocked = false; currentTarget = null; currentText = ''; currentMarkdown = '';
+    isLocked = false; 
+    selectedTargets.clear();
+    currentText = ''; 
+    currentMarkdown = '';
+    
     document.body.classList.remove('copygo-is-selecting');
     if (inspectorEnabled) document.body.classList.add('copygo-is-selecting');
-    if (highlightElement) { highlightElement.classList.remove('locked'); highlightElement.style.display = 'none'; }
+    
+    hideHoverHighlight();
+    lockedOverlays.forEach(el => el.remove());
+    lockedOverlays = [];
+    
     hideToolbar();
   }
 
   function handleMouseOver(e) {
-    if (!inspectorEnabled || isLocked) return;
+    if (!inspectorEnabled) return;
+    if (isLocked && !e.shiftKey) return; 
     e.stopPropagation();
     if (e.target.closest('.copygo-toolbar') || e.target.closest('.copygo-highlight-overlay')) return;
-    updateHighlight(e.target, false);
+    updateHoverHighlight(e.target);
   }
 
   function handleClick(e) {
     if (!inspectorEnabled || e.target.closest('.copygo-toolbar')) return;
     e.stopPropagation(); e.preventDefault();
-    if (isLocked) resetState();
+    
+    let isMultiSelect = e.shiftKey;
+    if (isLocked && !isMultiSelect) resetState();
+    
     const target = e.target;
-    let text = (target.innerText || target.textContent || '').trim();
-    if (text) {
-      try {
-        currentMarkdown = domToMarkdown(target).trim().replace(/\n{3,}/g, '\n\n');
-        isLocked = true; currentTarget = target; currentText = text;
-        updateHighlight(target, true); showToolbar(target);
-      } catch (err) {
+    if (isMultiSelect && selectedTargets.has(target)) {
+        selectedTargets.delete(target);
+        if (selectedTargets.size === 0) {
+            resetState();
+            return;
+        }
+    } else {
+        selectedTargets.add(target);
+    }
+    
+    try {
+        const sortedTargets = Array.from(selectedTargets).sort((a, b) => {
+            const pos = a.compareDocumentPosition(b);
+            if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+            if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+            return 0;
+        });
+
+        currentMarkdown = '';
+        currentText = '';
+        sortedTargets.forEach(el => {
+            let text = (el.innerText || el.textContent || '').trim();
+            if (text) {
+                currentText += text + '\n\n';
+                currentMarkdown += domToMarkdown(el).trim().replace(/\n{3,}/g, '\n\n') + '\n\n';
+            }
+        });
+        currentText = currentText.trim();
+        currentMarkdown = currentMarkdown.trim();
+
+        if (currentText) {
+            isLocked = true; 
+            hideHoverHighlight();
+            updateLockedOverlays();
+            showToolbar(target);
+            updateToolbarIndicators();
+        } else {
+            selectedTargets.delete(target);
+            if (selectedTargets.size === 0) resetState();
+        }
+    } catch (err) {
         console.error('CopyGo Extraction Error:', err);
         showToastAt(e.clientX, e.clientY, '提取失败');
-        updateHighlight(target, false);
-      }
+        selectedTargets.delete(target);
+        if (selectedTargets.size > 0) updateLockedOverlays();
+        else resetState();
     }
   }
 
@@ -377,5 +465,11 @@
     const p = []; if (e.ctrlKey) p.push('Ctrl'); if (e.altKey) p.push('Alt'); if (e.shiftKey) p.push('Shift'); if (e.metaKey) p.push('Command');
     let k = e.key.toUpperCase(); if (k === ' ') k = 'Space'; p.push(k);
     if (p.join('+') === curShortcut) { e.preventDefault(); toggleInspector(!inspectorEnabled); }
+  });
+
+  document.addEventListener('keyup', (e) => {
+    if (inspectorEnabled && isLocked && e.key === 'Shift') {
+        hideHoverHighlight();
+    }
   });
 })();
