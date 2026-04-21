@@ -46,8 +46,11 @@
 
     // 特殊块：Pre/Code
     if (tag === 'pre') {
-        const codeChild = node.querySelector('code');
-        const text = (codeChild ? codeChild.innerText : node.innerText).trim();
+        // 仅当 pre 直接包含单个 code 子元素时才取 code 内容（标准 <pre><code> 模式）
+        // 否则直接取 pre.innerText，以兼容 prettyprint 等语法高亮（每行拆成多个 <li><code>）
+        const children = Array.from(node.children);
+        const directCode = children.length === 1 && children[0].tagName && children[0].tagName.toLowerCase() === 'code' ? children[0] : null;
+        const text = (directCode ? directCode.innerText : node.innerText).trim();
         return '\n```\n' + text + '\n```\n\n';
     }
 
@@ -415,9 +418,15 @@
   }
 
   function downloadFile(content, filename, contentType) {
-    chrome.runtime.sendMessage({ action: 'download', content, filename, contentType }, (r) => {
-      if (chrome.runtime.lastError) alert('下载失败: ' + chrome.runtime.lastError.message);
-    });
+    const blob = new Blob([content], { type: contentType + ';charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
   }
 
   function saveTextToStorage(md) {

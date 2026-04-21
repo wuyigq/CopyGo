@@ -1,0 +1,60 @@
+简要描述：
+用户信息主页 - member.home
+接口版本：
+版本号	制定人	制定日期	修订日期
+
+请求方式：
+POST
+请求头：
+参数名	是否必须	类型	说明
+Content-Type	是	string	请求类型： application/json
+公共参数
+fc = member.home
+param 请求参数:
+参数名	是否必须	类型	说明
+
+返回示例:
+
+正确时返回:
+
+{
+    "ret": 1,
+    "msg": "",
+    "time": 1776329501,
+    "data": {
+        "vipinfo": {    //vip信息
+            "viplevel": 0,    //当前等级
+            "nextlevel": 1,    
+            "nextdata": {    //下一级目标
+                "effective": 0,
+                "payamount": 0,
+                "target_payamount": 300000,
+                "target_effective": 1000000
+            }
+        },
+        "userinfo": {    //用户信息
+            "okphone": 0,    //是否绑定手机
+            "phone": "",    //手机号
+            "okwdpwd": 0,    //是否设置取款密码
+            "bindbank": 0,    //绑定银行卡
+            "iconid": 1,    //头像id
+            "money": 0,        //账户余额
+            "paymoney": 0,    //付费部分
+            "wdmoney": 0,    //可取部分
+            "freemoney": 0,    //免费部分
+            "lockmoney": 0,    //锁定部分
+            "points": 0,    //积分余额
+        },
+        "mstat": [
+            'playTimes':100,    //总牌局
+            'winTimes':25,        //赢场次
+            'maxWinmoney':1000000,    //最大赢取
+        ]
+    }
+}
+
+错误时返回:
+
+备注:
+更多返回错误代码请看首页的错误代码描述
+文档更新时间: 2026-04-17 08:11   作者：彭杰明
